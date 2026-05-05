@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+from concurrent.futures import ThreadPoolExecutor
 
 import anndata as ad
 import muon as mu
@@ -31,7 +32,7 @@ def parse_args():
         description="Download Perturb-seq MEX data and convert to MuData"
     )
     parser.add_argument(
-        "--dataset",
+        "--dataset_name",
         required=True,
         choices=list(DATASETS.keys()),
         help="dataset to download",
@@ -69,22 +70,35 @@ def fetch(
     return os.path.join(download_dir, tars[0])
 
 
-def read_batches(mex_dir: str | os.PathLike[str], prefix_regex: str) -> MuData:
+def find_mex_dir(extract_dir: str | os.PathLike[str]) -> str:
+    """Walk extract_dir and return the first directory containing MEX matrix files."""
+    for root, _, files in os.walk(extract_dir):
+        if any(f.endswith("_matrix.mtx.gz") for f in files):
+            return root
+    raise FileNotFoundError("No MEX files found after extraction")
+
+
+def read_batches(
+    mex_dir: str | os.PathLike[str], prefix_regex: str, n_workers: int = 8
+) -> MuData:
     """Read all per-batch MEX directories, annotate obs with batch ID, and concatenate into a single MuData."""
-    prefixes = {
+    prefixes = sorted(
         m.group(1) for f in os.listdir(mex_dir) if (m := re.match(prefix_regex, f))
-    }
+    )
     if not prefixes:
         raise ValueError(f"No batch prefixes matched in {mex_dir}")
 
     print(f"  found {len(prefixes)} batches", file=sys.stderr)
-    mdatas = []
-    for prefix in sorted(prefixes):
+
+    def _read_one(prefix: str) -> MuData:
         mdata = mu.read_10x_mtx(mex_dir, prefix=prefix)
         batch_id = re.search(r"_(\d+)_", prefix).group(1)
         for mod in mdata.mod:
             mdata[mod].obs["batch"] = batch_id
-        mdatas.append(mdata)
+        return mdata
+
+    with ThreadPoolExecutor(max_workers=n_workers) as executor:
+        mdatas = list(executor.map(_read_one, prefixes))
 
     mdata = mu.MuData(
         {
@@ -102,7 +116,7 @@ def read_batches(mex_dir: str | os.PathLike[str], prefix_regex: str) -> MuData:
 def main():
     args = parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
-    cfg = DATASETS[args.dataset]
+    cfg = DATASETS[args.dataset_name]
 
     tmp = os.path.join(args.output_dir, "_tmp")
     os.makedirs(tmp, exist_ok=True)
@@ -114,7 +128,7 @@ def main():
             tar.extractall(tmp)
 
         print("Reading MEX batches ...", file=sys.stderr)
-        mdata = read_batches(tmp, cfg["prefix_regex"])
+        mdata = read_batches(find_mex_dir(tmp), cfg["prefix_regex"])
     finally:
         shutil.rmtree(tmp)
 
