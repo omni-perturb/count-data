@@ -31,7 +31,7 @@ DATASETS = {
     },
     "rpe1": {
         "figshare_id": "20127869",
-        "filename_pattern": "K562_essential*",
+        "filename_pattern": "rpe1*",
         "prefix_regex": r"(RD7_\d+_)matrix\.mtx\.gz",
     },
 }
@@ -66,6 +66,7 @@ def fetch(
             "download",
             "figshare",
             figshare_id,
+            "-q",
             "--out",
             out_dir,
             "--filename-pattern",
