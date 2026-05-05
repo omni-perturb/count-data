@@ -1,0 +1,11 @@
+[workspace]
+name = "raw-data"
+channels = ["https://prefix.dev/almost-conductor", "conda-forge", "bioconda"]
+platforms = ["linux-64", "osx-arm64"]
+
+[dependencies]
+python = ">=3.12"
+bash = "*"
+hapiq = "*"
+anndata = "*"
+muon = "*"
