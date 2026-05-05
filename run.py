@@ -24,6 +24,16 @@ DATASETS = {
         "filename_pattern": "K562_essential*",
         "prefix_regex": r"(KD6_\d+_essential_)matrix\.mtx\.gz",
     },
+    "K562_gwps": {
+        "figshare_id": "20127869",
+        "filename_pattern": "K562_gwps*",
+        "prefix_regex": r"(KD8_\d+_gwps_)matrix\.mtx\.gz",
+    },
+    "rpe1": {
+        "figshare_id": "20127869",
+        "filename_pattern": "K562_essential*",
+        "prefix_regex": r"(RD7_\d+_)matrix\.mtx\.gz",
+    },
 }
 
 
