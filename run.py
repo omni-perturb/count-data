@@ -67,6 +67,8 @@ def fetch(
             "figshare",
             figshare_id,
             "-q",
+            "--timeout",
+            str(60 * 60),  # 1 hour
             "--out",
             out_dir,
             "--filename-pattern",
