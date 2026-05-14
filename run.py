@@ -126,18 +126,30 @@ def read_batches(
     return mdata
 
 
+_NT_RE = re.compile(r"^non-targeting", re.IGNORECASE)
+
+
 def annotate_crispr_var(mdata: MuData) -> None:
     """Add target_gene to crispr.var by parsing guide names.
 
     Guide names follow the convention GENENAME_STRAND_POSITION (e.g.
-    SMG5_+_156252585.23-P1P2_posA). The gene name is everything before the
-    first _STRAND_ token where STRAND is + or -.
+    SMG5_+_156252585.23-P1P2_posA). Non-targeting controls omit the strand
+    token (e.g. non-targeting_03060_posA) and are all mapped to
+    "non-targeting".
     """
     if "crispr" not in mdata.mod:
         return
+
+    def parse_target(gid: str) -> str:
+        m = re.match(r"^([^_]+)_[+-]_", gid)
+        if m:
+            return m.group(1)
+        if _NT_RE.match(gid):
+            return "non-targeting"
+        return gid
+
     mdata["crispr"].var["target_gene"] = [
-        m.group(1) if (m := re.match(r"^([^_]+)_[+-]_", gid)) else gid
-        for gid in mdata["crispr"].var_names
+        parse_target(gid) for gid in mdata["crispr"].var_names
     ]
 
 
