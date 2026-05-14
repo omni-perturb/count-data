@@ -126,6 +126,21 @@ def read_batches(
     return mdata
 
 
+def annotate_crispr_var(mdata: MuData) -> None:
+    """Add target_gene to crispr.var by parsing guide names.
+
+    Guide names follow the convention GENENAME_STRAND_POSITION (e.g.
+    SMG5_+_156252585.23-P1P2_posA). The gene name is everything before the
+    first _STRAND_ token where STRAND is + or -.
+    """
+    if "crispr" not in mdata.mod:
+        return
+    mdata["crispr"].var["target_gene"] = [
+        m.group(1) if (m := re.match(r"^([^_]+)_[+-]_", gid)) else gid
+        for gid in mdata["crispr"].var_names
+    ]
+
+
 def main():
     args = parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
@@ -144,6 +159,8 @@ def main():
         mdata = read_batches(find_mex_dir(tmp), cfg["prefix_regex"])
     finally:
         shutil.rmtree(tmp)
+
+    annotate_crispr_var(mdata)
 
     out_path = os.path.join(args.output_dir, f"{args.name}.h5mu")
     mdata.write(out_path)
