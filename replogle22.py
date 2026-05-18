@@ -7,7 +7,6 @@ import shutil
 import subprocess
 import sys
 import tarfile
-import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
@@ -143,7 +142,7 @@ def fetch_annotation(out_dir: str | os.PathLike[str], sheet: str) -> pd.DataFram
     xlsx_path = os.path.join(out_dir, "replogle_annotation.xlsx")
     if not os.path.exists(xlsx_path):
         print("Downloading library annotation ...", file=sys.stderr)
-        urllib.request.urlretrieve(ANNOTATION_URL, xlsx_path)
+        subprocess.run(["curl", "-fsSL", "-o", xlsx_path, ANNOTATION_URL], check=True)
     anno = pd.read_excel(xlsx_path, sheet_name=sheet)
     return pd.concat(
         [
