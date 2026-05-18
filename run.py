@@ -7,7 +7,12 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
+
+import numpy as np
+import pandas as pd
+import scipy.sparse as sp
 
 import anndata as ad
 import muon as mu
@@ -18,21 +23,28 @@ MODALITY_NAMES: dict[str, str] = {
     "CRISPR Guide Capture": "crispr",
 }
 
+ANNOTATION_URL = (
+    "https://ars.els-cdn.com/content/image/1-s2.0-S0092867422005979-mmc1.xlsx"
+)
+
 DATASETS = {
     "K562_essential": {
         "figshare_id": "20127869",
         "filename_pattern": "K562_essential*",
         "prefix_regex": r"(KD6_\d+_essential_)matrix\.mtx\.gz",
+        "annotation_sheet": "TabA_K562_day8_library",
     },
     "K562_gwps": {
         "figshare_id": "20127869",
         "filename_pattern": "K562_gwps*",
         "prefix_regex": r"(KD8_\d+_gwps_)matrix\.mtx\.gz",
+        "annotation_sheet": "TabB_K562_day6_library",
     },
     "rpe1": {
         "figshare_id": "20127869",
         "filename_pattern": "rpe1*",
         "prefix_regex": r"(RD7_\d+_)matrix\.mtx\.gz",
+        "annotation_sheet": "TabC_RPE1_day7_library",
     },
 }
 
@@ -126,31 +138,59 @@ def read_batches(
     return mdata
 
 
-_NT_RE = re.compile(r"^non-targeting", re.IGNORECASE)
+def fetch_annotation(out_dir: str | os.PathLike[str], sheet: str) -> pd.DataFrame:
+    """Download the Replogle library annotation and return a guide_id → (pair_id, gene) table."""
+    xlsx_path = os.path.join(out_dir, "replogle_annotation.xlsx")
+    if not os.path.exists(xlsx_path):
+        print("Downloading library annotation ...", file=sys.stderr)
+        urllib.request.urlretrieve(ANNOTATION_URL, xlsx_path)
+    anno = pd.read_excel(xlsx_path, sheet_name=sheet)
+    return pd.concat(
+        [
+            anno[["unique sgRNA pair ID", "gene", "sgID_A"]].rename(
+                columns={"sgID_A": "guide_id"}
+            ),
+            anno[["unique sgRNA pair ID", "gene", "sgID_B"]].rename(
+                columns={"sgID_B": "guide_id"}
+            ),
+        ]
+    ).set_index("guide_id")
 
 
-def annotate_crispr_var(mdata: MuData) -> None:
-    """Add target_gene to crispr.var by parsing guide names.
-
-    Guide names follow the convention GENENAME_STRAND_POSITION (e.g.
-    SMG5_+_156252585.23-P1P2_posA). Non-targeting controls omit the strand
-    token (e.g. non-targeting_03060_posA) and are all mapped to
-    "non-targeting".
-    """
+def aggregate_guide_pairs(mdata: MuData, anno: pd.DataFrame) -> None:
+    """Sum counts per guide pair using the library annotation."""
     if "crispr" not in mdata.mod:
         return
+    crispr = mdata["crispr"]
 
-    def parse_target(gid: str) -> str:
-        m = re.match(r"^([^_]+)_[+-]_", gid)
-        if m:
-            return m.group(1)
-        if _NT_RE.match(gid):
-            return "non-targeting"
-        return gid
+    # Strip _posA / _posB suffix to match annotation guide IDs
+    guide_ids = crispr.var_names.str[:-5]
+    joined = pd.DataFrame({"guide_id": guide_ids}).join(anno, on="guide_id", how="left")
+    pair_ids = joined["unique sgRNA pair ID"].fillna(pd.Series(guide_ids, dtype=str))
 
-    mdata["crispr"].var["target_gene"] = [
-        parse_target(gid) for gid in mdata["crispr"].var_names
-    ]
+    unique_pairs, inverse = np.unique(pair_ids.values, return_inverse=True)
+    n_guides, n_pairs = len(pair_ids), len(unique_pairs)
+    indicator = sp.csr_matrix(
+        (np.ones(n_guides), (np.arange(n_guides), inverse)),
+        shape=(n_guides, n_pairs),
+    )
+
+    pair_gene = (
+        joined[["unique sgRNA pair ID", "gene"]]
+        .drop_duplicates("unique sgRNA pair ID")
+        .set_index("unique sgRNA pair ID")["gene"]
+    )
+    var = pd.DataFrame(
+        {"target_gene": pair_gene.reindex(unique_pairs).values},
+        index=pd.Index(unique_pairs, name="pair_id"),
+    )
+
+    mdata.mod["crispr"] = ad.AnnData(
+        X=crispr.X @ indicator,
+        obs=crispr.obs.copy(),
+        var=var,
+    )
+    mdata.update()
 
 
 def main():
@@ -172,7 +212,8 @@ def main():
     finally:
         shutil.rmtree(tmp)
 
-    annotate_crispr_var(mdata)
+    anno = fetch_annotation(args.output_dir, cfg["annotation_sheet"])
+    aggregate_guide_pairs(mdata, anno)
 
     out_path = os.path.join(args.output_dir, f"{args.name}.h5mu")
     mdata.write(out_path)

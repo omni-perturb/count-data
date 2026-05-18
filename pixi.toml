@@ -4,8 +4,9 @@ channels = ["https://prefix.dev/almost-conductor", "conda-forge", "bioconda"]
 platforms = ["linux-64", "osx-arm64"]
 
 [dependencies]
-python = ">=3.12"
-bash = "*"
+python = ">=3.14.4,<3.15"
+bash = ">=5.2.37,<6"
 hapiq = "*"
-anndata = "*"
-muon = "*"
+anndata = ">=0.12.14,<0.13"
+muon = ">=0.1.7,<0.2"
+openpyxl = ">=3.1.5,<4"
