@@ -196,8 +196,10 @@ def aggregate_guide_pairs(mdata: MuData, anno: pd.DataFrame) -> MuData:
         index=pd.Index(unique_pairs, name="pair_id"),
     )
 
+    X = crispr.X @ indicator
+    X.sort_indices()
     new_crispr = ad.AnnData(
-        X=crispr.X @ indicator,
+        X=X,
         obs=crispr.obs.copy(),
         var=var,
     )
