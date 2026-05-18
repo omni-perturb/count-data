@@ -143,7 +143,19 @@ def fetch_annotation(out_dir: str | os.PathLike[str], sheet: str) -> pd.DataFram
     if not os.path.exists(xlsx_path):
         print("Downloading library annotation ...", file=sys.stderr)
         subprocess.run(["curl", "-fsSL", "-o", xlsx_path, ANNOTATION_URL], check=True)
-    anno = pd.read_excel(xlsx_path, sheet_name=sheet)
+    try:
+        anno = pd.read_excel(xlsx_path, sheet_name=sheet)
+    finally:
+        os.unlink(xlsx_path)
+    anno["gene"] = anno["gene"].replace(
+        {
+            "PMF1-BGLAP": "BGLAP",
+            "RPS10-NUDT3": "RPS10",
+            "NUP62": "ATF5",
+        }
+    )
+    anno["sgID_A"] = anno["sgID_A"].str.replace(",", "-", regex=False)
+    anno["sgID_B"] = anno["sgID_B"].str.replace(",", "-", regex=False)
     return pd.concat(
         [
             anno[["unique sgRNA pair ID", "gene", "sgID_A"]].rename(
