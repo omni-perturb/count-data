@@ -156,10 +156,10 @@ def fetch_annotation(out_dir: str | os.PathLike[str], sheet: str) -> pd.DataFram
     ).set_index("guide_id")
 
 
-def aggregate_guide_pairs(mdata: MuData, anno: pd.DataFrame) -> None:
-    """Sum counts per guide pair using the library annotation."""
+def aggregate_guide_pairs(mdata: MuData, anno: pd.DataFrame) -> MuData:
+    """Sum counts per guide pair using the library annotation. Returns a new MuData."""
     if "crispr" not in mdata.mod:
-        return
+        return mdata
     crispr = mdata["crispr"]
 
     # Strip _posA / _posB suffix to match annotation guide IDs
@@ -184,12 +184,12 @@ def aggregate_guide_pairs(mdata: MuData, anno: pd.DataFrame) -> None:
         index=pd.Index(unique_pairs, name="pair_id"),
     )
 
-    mdata.mod["crispr"] = ad.AnnData(
+    new_crispr = ad.AnnData(
         X=crispr.X @ indicator,
         obs=crispr.obs.copy(),
         var=var,
     )
-    mdata.update()
+    return mu.MuData({**mdata.mod, "crispr": new_crispr})
 
 
 def main():
@@ -212,7 +212,7 @@ def main():
         shutil.rmtree(tmp)
 
     anno = fetch_annotation(args.output_dir, cfg["annotation_sheet"])
-    aggregate_guide_pairs(mdata, anno)
+    mdata = aggregate_guide_pairs(mdata, anno)
 
     out_path = os.path.join(args.output_dir, f"{args.name}.h5mu")
     mdata.write(out_path)
